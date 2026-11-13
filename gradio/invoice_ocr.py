@@ -8,6 +8,7 @@ import base64
 import tempfile
 from pathlib import Path
 from contextlib import asynccontextmanager
+from proxy_settings import load_proxy_settings
 
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 
@@ -34,6 +35,13 @@ class InvoiceOCRError(Exception):
 async def launch_invoice_browser(playwright, *, engine, headless, progress=None):
     if engine not in {'camoufox', 'chromium'}:
         raise InvoiceOCRError("Choose Camoufox or Chromium.", "browser_setup")
+    try:
+        proxy = load_proxy_settings()
+    except (ValueError, KeyError, OSError) as exc:
+        raise InvoiceOCRError('Proxy configuration is invalid. Check the private server settings.', 'proxy_setup') from exc
+    if proxy and progress:
+        progress('Using the configured server-side proxy. Authentication is not shown in the interface.')
+    proxy_options = {'proxy': proxy} if proxy else {}
     if engine == "camoufox":
         try:
             from camoufox.async_api import AsyncCamoufox
@@ -47,6 +55,7 @@ async def launch_invoice_browser(playwright, *, engine, headless, progress=None)
                 # Avoid the auxiliary GPU-probe browser which crashes on this host.
                 canvas_noise=True,
                 persistent_context=True, user_data_dir=profile, timeout=30000,
+                **proxy_options,
             )
             try:
                 context = await manager.__aenter__()
@@ -67,7 +76,7 @@ async def launch_invoice_browser(playwright, *, engine, headless, progress=None)
                 finally:
                     await manager.__aexit__(None, None, None)
                 return
-    browser = await playwright.chromium.launch(headless=headless)
+    browser = await playwright.chromium.launch(headless=headless, **proxy_options)
     try:
         context = await browser.new_context(viewport={"width": 1280, "height": 900})
         yield context

@@ -1,4 +1,4 @@
-# Web-Scrapping Playwriter Demo
+﻿# Web-Scrapping Playwriter Demo
 Web Scrapping Based Demo
 
 ### Invoice OCR (CardScanner)
@@ -27,7 +27,28 @@ In a second terminal, start the interface from `gradio`:
 ..\.venv\Scripts\python.exe demo.py
 ```
 
-Open http://localhost:7860. Upload an invoice and click **Extract invoice**.
+Open http://localhost:7860. OCR starts automatically when an invoice is uploaded.
+The confirmation card appears in the center of the viewport over a dimmed backdrop. It shows a loading animation for five seconds, then a checkbox.
+After the user clicks it, loading runs for another five seconds, then the card
+disappears and the progress bar starts at 0%. OCR continues through every phase.
+The compact
+checkbox card uses a familiar verification layout and is clearly labeled
+**Invoice OCR / Local confirmation**; it is not Cloudflare or a CAPTCHA service.
+New uploads reset the timed sequence. These animations are local presentation
+states and are not evidence of a CAPTCHA security check.
+
+A percentage bar estimates the remaining processing time after the timed
+confirmation sequence. It uses a rough 60-second processing budget, subtracting
+time already spent processing in the background. It stops at 95% if processing
+has not completed, and says when the estimate has been exceeded. Confirmation and processing run in parallel, so
+their durations are displayed separately alongside total elapsed time.
+
+Successful results stay in server-side session jobs until the checkbox is clicked
+and its second five-second animation has finished. If OCR finishes first, the
+completed result remains hidden; after confirmation the bar briefly shows 0%
+then completes at 100%, without repeating OCR. Results expire after 30 minutes;
+failed jobs support retry.
+
 The app opens CardScanner as a guest, uploads the file, clicks Convert when ready,
 and displays the returned invoice data as a table and JSON, with its download link.
 No sign-in or account connection is required by this app. Verification is attempted
@@ -79,11 +100,41 @@ Other attempts hit CardScanner's **Daily Limit Reached** dialog (2 free daily
 conversions); quota errors are still reported. Past success does not guarantee
 future verification acceptance.
 
-The Flask API accepts `POST /invoice_ocr` with multipart `file` and optional
+The Flask API accepts `POST /invoice_ocr` with multipart `file`, required
+`processing_requested=true` (or the legacy `user_confirmed=true`), and optional
 `show_browser=false` for headless operation. Responses use `resultCode` (`Ok` or
 `Error`) and `result`. A visible daily-limit dialog returns HTTP 429 with
 `error_code=usage_limit`.
+An absent processing request returns HTTP 428 (`processing_request_required`).
+This flag expresses intent to start OCR, not proof of humanity. The separate
+local confirmation governs result display in the Gradio session.
 Temporary local invoice uploads are removed after processing.
+
+### Optional server-side proxy
+
+Invoice browser traffic can use a proxy configured in the private, ignored file
+`.local/invoice-proxy.json`. Authentication is never returned to Gradio:
+
+```json
+{
+  "server": "http://dcp.evomi.com:2000",
+  "username": "YOUR_PROXY_USERNAME",
+  "password": "YOUR_PROXY_PASSWORD"
+}
+```
+
+Without a session parameter, Evomi controls rotation using its default behavior.
+Two independent requests to its IP-check endpoint returned different exit IPs
+after removing the session setting. Browser connections may be reused, so the app
+does not guarantee a unique IP for every HTTP subrequest. IP changes can interrupt
+verification and conversion. The optional `evomi_locked_session` setting is still
+supported but is not enabled in the current configuration.
+
+`INVOICE_PROXY_URL` overrides the file and accepts standard authenticated URLs or
+Evomi's `http://host:port:username:password` format. An explicitly empty value
+disables proxy use. Keep any desired provider session options in the password when
+using this environment override. The local file is read afresh for each invoice.
+The daily-limit check still stops processing when CardScanner reports a limit.
 
 Standalone browser script:
 
@@ -104,3 +155,4 @@ pip install pyarmor
 ```bash
 pyarmor gen app.py
 ```
+

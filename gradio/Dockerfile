@@ -31,6 +31,9 @@ WORKDIR /home/kby-ai-deepfake
 COPY ./app.py .
 COPY ./demo.py .
 COPY ./invoice_ocr.py .
+COPY ./proxy_settings.py .
+COPY ./invoice_ui.py .
+COPY ./invoice_jobs.py .
 COPY ./requirements.txt .
 COPY ./run.sh .
 COPY ./examples ./examples

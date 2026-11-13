@@ -78,6 +78,9 @@ class InvoiceTests(unittest.TestCase):
         cls.thread.join()
 
     def setUp(self):
+        proxy_patch = patch('invoice_ocr.load_proxy_settings', return_value=None)
+        proxy_patch.start()
+        self.addCleanup(proxy_patch.stop)
         Site.credits = 1
         Site.conversion_error = None
         Site.show_limit = False
@@ -159,7 +162,7 @@ class InvoiceTests(unittest.TestCase):
             raise invoice_ocr.InvoiceOCRError('Daily limit reached.', 'usage_limit')
         with patch('app.extract_invoice', limit):
             response = app.test_client().post('/invoice_ocr', data={
-                'file': (io.BytesIO(b'invoice data'), 'bill.pdf')
+                'file': (io.BytesIO(b'invoice data'), 'bill.pdf'), 'user_confirmed': 'true',
             })
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json['error_code'], 'usage_limit')
@@ -176,7 +179,7 @@ class InvoiceTests(unittest.TestCase):
             return {'data': {'total': 55}}
 
         with patch('app.extract_invoice', extract):
-            response = client.post('/invoice_ocr', data={'file': (io.BytesIO(b'invoice data'), 'bill.pdf')})
+            response = client.post('/invoice_ocr', data={'file': (io.BytesIO(b'invoice data'), 'bill.pdf'), 'user_confirmed': 'true'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json['result']['data']['total'], 55)
         self.assertFalse(saved_paths[0].exists())
@@ -190,11 +193,30 @@ class InvoiceTests(unittest.TestCase):
             return {'data': {'total': 55}}
         with patch('app.extract_invoice', extract):
             response = app.test_client().post('/invoice_ocr', data={
-                'file': (io.BytesIO(b'invoice data'), 'bill.pdf'), 'stream': 'true'
+                'file': (io.BytesIO(b'invoice data'), 'bill.pdf'), 'stream': 'true', 'user_confirmed': 'true',
             })
             events = [json.loads(line) for line in response.data.splitlines()]
         self.assertEqual([e['type'] for e in events], ['progress', 'progress', 'result'])
         self.assertEqual(events[-1]['result']['data']['total'], 55)
+
+    def test_upload_without_processing_request_never_starts_extraction(self):
+        with patch('app.extract_invoice') as extract:
+            response = app.test_client().post('/invoice_ocr', data={
+                'file': (io.BytesIO(b'invoice data'), 'bill.pdf')
+            })
+        self.assertEqual(response.status_code, 428)
+        self.assertEqual(response.json['error_code'], 'processing_request_required')
+        extract.assert_not_called()
+
+    def test_processing_request_does_not_wait_for_local_confirmation(self):
+        async def extract(*args, **kwargs):
+            return {'data': {'total': 55}}
+        with patch('app.extract_invoice', extract):
+            response = app.test_client().post('/invoice_ocr', data={
+                'file': (io.BytesIO(b'invoice data'), 'bill.pdf'),
+                'processing_requested': 'true', 'user_confirmed': 'false',
+            })
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == '__main__':

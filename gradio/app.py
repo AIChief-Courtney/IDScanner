@@ -220,6 +220,9 @@ def process_invoice():
     contents = file.stream.read(MAX_FILE_SIZE + 1)
     if not contents or len(contents) > MAX_FILE_SIZE:
         return jsonify(resultCode="Error", result="Invoice must be nonempty and no larger than 10 MB."), 400
+    if not any(request.form.get(key, 'false').lower() == 'true' for key in ('processing_requested', 'user_confirmed')):
+        return jsonify(resultCode="Error", error_code="processing_request_required",
+                       result="Explicitly request invoice processing before starting the job."), 428
     show_browser = request.form.get('show_browser', 'true').lower() == 'true'
     engine = request.form.get('engine', 'camoufox')
     if engine not in {'camoufox', 'chromium'}:
