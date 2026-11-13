@@ -1,0 +1,7 @@
+.venv/
+.playwright/
+.matplotlib/
+.local/
+outputs/
+__pycache__/
+*.log
